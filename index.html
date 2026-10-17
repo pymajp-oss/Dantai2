@@ -66,11 +66,11 @@
           
           <select id="timer-preset" onchange="changeTimerPreset(this.value)" class="bg-slate-900 border border-slate-700 text-amber-300 font-bold text-xs rounded px-1 py-0.5 focus:outline-none">
             <option value="120">2分</option>
-            <option value="180">3分</option>
-            <option value="240" selected>4分</option>
+            <option value="180" selected>3分</option>
+            <option value="240">4分</option>
           </select>
 
-          <span id="timer-display" class="font-mono text-lg font-bold w-14 text-center">04:00</span>
+          <span id="timer-display" class="font-mono text-lg font-bold w-14 text-center">03:00</span>
           
           <div class="flex gap-1">
             <button id="btn-timer-toggle" onclick="toggleTimer()" class="bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 rounded text-xs">
@@ -214,8 +214,8 @@
     let roomRef = null;
     let unsubscribeRoom = null; // リスナー解除用
     let timerInterval = null;
-    let timerSeconds = 240;
-    let selectedDuration = 240;
+    let timerSeconds = 180;
+    let selectedDuration = 180;
     let isTimerRunning = false;
 
     // ※ Firebase設定（ご自身のキーを入力）
