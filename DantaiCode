@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>剣道団体戦スコアボード</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Firebase App & Firestore SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&display=swap');
+    
+    body {
+      font-family: 'Shippori Mincho', serif;
+      background-color: #0f172a;
+      color: #f8fafc;
+    }
+
+    /* 縦書き指定（文字の上下・左右センタリング用） */
+    .vertical-text {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      letter-spacing: 0.1em;
+      text-align: center;
+    }
+
+    /* 初本（1本目）の〇囲みデザイン */
+    .first-point-circle {
+      border: 2px solid #f59e0b;
+      border-radius: 9999px;
+      box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+    }
+
+    /* 横スクロールバー */
+    ::-webkit-scrollbar {
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- ヘッダー -->
+  <header class="bg-slate-900 border-b border-slate-700 p-3 sticky top-0 z-50 shadow-md">
+    <div class="max-w-7xl mx-auto flex flex-wrap justify-between items-center gap-3">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-khanda text-amber-500 text-2xl"></i>
+        <h1 class="text-lg md:text-xl font-bold tracking-wider text-amber-100">剣道団体戦スコアボード</h1>
+      </div>
+
+      <!-- タイマー & 共有コントロール -->
+      <div class="flex items-center gap-2">
+        <!-- 試合時間タイマー ＆ 時間切り替え -->
+        <div class="bg-slate-800 border border-slate-600 rounded px-2.5 py-1 flex items-center gap-2">
+          <i class="fa-solid fa-stopwatch text-amber-400"></i>
+          
+          <!-- 時間選択セレクト -->
+          <select id="timer-preset" onchange="changeTimerPreset(this.value)" class="bg-slate-900 border border-slate-700 text-amber-300 font-bold text-xs rounded px-1 py-0.5 focus:outline-none">
+            <option value="120">2分</option>
+            <option value="180">3分</option>
+            <option value="240" selected>4分</option>
+          </select>
+
+          <span id="timer-display" class="font-mono text-lg font-bold w-14 text-center">04:00</span>
+          
+          <div class="flex gap-1">
+            <button id="btn-timer-toggle" onclick="toggleTimer()" class="bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 rounded text-xs">
+              <i class="fa-solid fa-play"></i>
+            </button>
+            <button onclick="resetTimer()" class="bg-slate-700 hover:bg-slate-600 text-white px-2 py-0.5 rounded text-xs">
+              <i class="fa-solid fa-rotate-left"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- クラウド同期 -->
+        <button onclick="toggleModal('sync-modal')" class="bg-indigo-700 hover:bg-indigo-600 text-white px-3 py-1.5 rounded text-xs md:text-sm flex items-center gap-1.5">
+          <i class="fa-solid fa-wifi"></i>
+          <span id="sync-status" class="hidden sm:inline">リアルタイム共有</span>
+        </button>
+
+        <!-- 保存 -->
+        <button onclick="exportCSV()" class="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded text-xs md:text-sm flex items-center gap-1">
+          <i class="fa-solid fa-file-csv"></i> 保存
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- メイン画面 -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-2 md:p-4 flex flex-col gap-3">
+
+    <!-- チームスコア対戦概要 -->
+    <div class="grid grid-cols-12 gap-2 bg-slate-900 border border-slate-700 rounded-lg p-3 text-center items-center shadow-lg">
+      <!-- 赤チーム -->
+      <div class="col-span-5 bg-red-950/40 border border-red-800/60 rounded p-2 flex flex-col md:flex-row items-center justify-between gap-1">
+        <input type="text" id="red-team-name" value="赤チーム" onchange="updateData()" class="bg-transparent text-red-400 font-bold text-base md:text-xl text-center md:text-left w-full border-b border-red-800/50 focus:outline-none">
+        <div class="flex gap-3 text-xs md:text-sm font-bold whitespace-nowrap">
+          <span>勝: <span id="red-total-wins" class="text-amber-400 text-lg">0</span></span>
+          <span>本: <span id="red-total-points" class="text-amber-400 text-lg">0</span></span>
+        </div>
+      </div>
+
+      <!-- VS -->
+      <div class="col-span-2 flex flex-col items-center justify-center">
+        <span class="text-slate-500 font-black text-lg italic">VS</span>
+        <span id="overall-status" class="text-[10px] md:text-xs font-bold text-amber-300">進行中</span>
+      </div>
+
+      <!-- 白チーム -->
+      <div class="col-span-5 bg-slate-800/60 border border-slate-600/60 rounded p-2 flex flex-col md:flex-row-reverse items-center justify-between gap-1">
+        <input type="text" id="white-team-name" value="白チーム" onchange="updateData()" class="bg-transparent text-slate-200 font-bold text-base md:text-xl text-center md:text-right w-full border-b border-slate-600/50 focus:outline-none">
+        <div class="flex gap-3 text-xs md:text-sm font-bold whitespace-nowrap">
+          <span>勝: <span id="white-total-wins" class="text-amber-400 text-lg">0</span></span>
+          <span>本: <span id="white-total-points" class="text-amber-400 text-lg">0</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 縦レイアウト・横並び試合カード（左：先鋒 ➔ 右：大将・代表戦） -->
+    <div class="overflow-x-auto pb-4">
+      <div id="matches-container" class="flex gap-3 min-w-max">
+        <!-- JSで動的生成 -->
+      </div>
+    </div>
+
+  </main>
+
+  <!-- モーダル -->
+  <div id="sync-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center hidden z-50 p-4">
+    <div class="bg-slate-800 border border-slate-600 rounded-lg max-w-md w-full p-5 space-y-4">
+      <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+        <h3 class="text-base font-bold text-amber-300"><i class="fa-solid fa-wifi mr-2"></i>リアルタイム共有</h3>
+        <button onclick="toggleModal('sync-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+
+      <p class="text-xs text-slate-300">
+        同じ「ルームコード」を入力すると、他の端末でリアルタイムにスコアを同期・観覧できます。
+      </p>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">ルームコード</label>
+          <div class="flex gap-2">
+            <input type="text" id="room-code-input" placeholder="例: KENDO123" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-amber-300 font-mono font-bold focus:outline-none uppercase text-sm">
+            <button onclick="generateRoomCode()" class="bg-slate-700 hover:bg-slate-600 text-xs px-3 py-1.5 rounded">自動生成</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-400 mb-1">役割</label>
+          <div class="grid grid-cols-2 gap-2">
+            <button id="role-recorder" onclick="setRole('recorder')" class="py-1.5 rounded border border-amber-500 bg-amber-500/20 text-amber-300 text-xs font-bold">
+              記録員 (操作可)
+            </button>
+            <button id="role-viewer" onclick="setRole('viewer')" class="py-1.5 rounded border border-slate-600 bg-slate-900 text-slate-400 text-xs font-bold">
+              観客 (閲覧のみ)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <button onclick="connectRoom()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded text-sm">
+          接続・同期開始
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MATCH_ROLES = [
+      { id: 'senpho', name: '先鋒' },
+      { id: 'jiho', name: '次鋒' },
+      { id: 'chuko', name: '中堅' },
+      { id: 'fukusho', name: '副将' },
+      { id: 'taisho', name: '大将' },
+      { id: 'daihyo', name: '代表戦' }
+    ];
+
+    let appData = {
+      redTeam: '赤チーム',
+      whiteTeam: '白チーム',
+      matches: MATCH_ROLES.map(r => ({
+        id: r.id,
+        roleName: r.name,
+        redPlayer: '赤選手',
+        whitePlayer: '白選手',
+        redFouls: 0,   // 赤の反則回数 (▲)
+        whiteFouls: 0, // 白の反則回数 (▲)
+        scores: [],    // { color: 'red'|'white', point: 'メ', isFirst: boolean }
+        isFinished: false
+      }))
+    };
+
+    let userRole = 'recorder';
+    let db = null;
+    let roomRef = null;
+    let timerInterval = null;
+    let timerSeconds = 240;
+    let selectedDuration = 240;
+    let isTimerRunning = false;
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDummyKeyForKendoScoreBoardApp12345",
+      authDomain: "kendo-board-app.firebaseapp.com",
+      projectId: "kendo-board-app",
+      storageBucket: "kendo-board-app.appspot.com",
+      messagingSenderId: "1234567890",
+      appId: "1:1234567890:web:abcdef123456"
+    };
+
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+      db = firebase.firestore();
+    } catch (e) {
+      console.warn("Offline mode active");
+    }
+
+    window.onload = () => {
+      loadLocalStorage();
+      renderMatches();
+      calculateTotals();
+    };
+
+    function loadLocalStorage() {
+      const local = localStorage.getItem('kendo_board_v6_data');
+      if (local) {
+        try {
+          appData = JSON.parse(local);
+          document.getElementById('red-team-name').value = appData.redTeam || '赤チーム';
+          document.getElementById('white-team-name').value = appData.whiteTeam || '白チーム';
+        } catch(e){}
+      }
+    }
+
+    function renderMatches() {
+      const container = document.getElementById('matches-container');
+      container.innerHTML = '';
+
+      appData.matches.forEach((m) => {
+        const redPoints = m.scores.filter(s => s.color === 'red');
+        const whitePoints = m.scores.filter(s => s.color === 'white');
+
+        const cardHtml = `
+          <div class="w-60 border ${m.isFinished ? 'border-amber-500/80 bg-slate-900' : 'border-slate-700 bg-slate-900/90'} rounded-lg flex flex-col p-2 shadow-lg relative">
+            
+            <!-- 役職ヘッダー -->
+            <div class="flex justify-between items-center border-b border-slate-700 pb-1 mb-2">
+              <span class="font-bold text-amber-400 text-sm">${m.roleName}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded font-bold ${m.isFinished ? 'bg-emerald-800 text-emerald-100' : 'bg-slate-700 text-slate-300'}">
+                ${m.isFinished ? '確定' : '試合中'}
+              </span>
+            </div>
+
+            <!-- ① 赤選手名（上部・縦書き中央揃え） & 反則表示 -->
+            <div class="bg-red-950/40 border border-red-900/50 rounded p-2 flex justify-between items-center min-h-[105px]">
+              <div class="flex flex-col items-center">
+                <span class="text-[10px] text-red-400 font-bold mb-1">【赤】</span>
+                <!-- 反則表示 -->
+                <span class="text-xs text-amber-400 font-bold tracking-tighter">
+                  ${'▲'.repeat(m.redFouls || 0)}
+                </span>
+              </div>
+              <!-- 選手名入力を中央寄せ -->
+              <div class="flex-1 flex justify-center items-center h-full">
+                <input type="text" value="${m.redPlayer}" onchange="updatePlayerName('${m.id}', 'red', this.value)"
+                       class="vertical-text text-base font-bold text-red-100 bg-transparent text-center focus:outline-none h-24 w-full border-b border-transparent focus:border-red-500">
+              </div>
+            </div>
+
+            <!-- ② 赤の獲得スコア（赤選手名の真下） -->
+            <div class="my-1.5 bg-slate-950/60 rounded border border-red-900/30 p-1.5 flex justify-center items-center gap-2">
+              ${[0, 1].map(i => {
+                const sc = redPoints[i];
+                if (!sc) return `<div class="w-7 h-7 rounded-full border border-slate-800"></div>`;
+                return `
+                  <div onclick="editPoint('${m.id}', 'red',${i})" class="w-7 h-7 flex items-center justify-center font-bold text-red-300 text-sm cursor-pointer hover:scale-110 transition-transform ${sc.isFirst ? 'first-point-circle text-amber-300 bg-red-900/60' : 'bg-red-900/40'}">
+                    ${sc.point}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- ③ 打突技・不戦・反則入力ボタン領域（中央） -->
+            ${userRole === 'recorder' ? `
+              <div class="my-1 bg-slate-950/90 rounded border border-slate-800 p-1.5 space-y-1.5">
+                <!-- 赤入力ボタン -->
+                <div class="flex justify-center items-center gap-1">
+                  <span class="text-[10px] text-red-400 font-bold">赤:</span>
+                  ${['メ','ド','コ','反','不','？'].map(pt => `
+                    <button onclick="addScore('${m.id}', 'red', '${pt}')" class="${pt === '不' ? 'bg-indigo-800 hover:bg-indigo-700 text-indigo-100' : pt === '？' ? 'bg-amber-800 hover:bg-amber-700 text-amber-200' : 'bg-red-800 hover:bg-red-700 text-red-100'} text-xs px-1 py-0.5 rounded font-bold">
+                      ${pt}
+                    </button>
+                  `).join('')}
+                  <button onclick="addFoul('${m.id}', 'red')" class="bg-amber-700 hover:bg-amber-600 text-amber-100 text-xs px-1 py-0.5 rounded font-bold" title="反則">
+                    ▲
+                  </button>
+                </div>
+                <!-- 白入力ボタン -->
+                <div class="flex justify-center items-center gap-1">
+                  <span class="text-[10px] text-slate-400 font-bold">白:</span>
+                  ${['メ','ド','コ','反','不','？'].map(pt => `
+                    <button onclick="addScore('${m.id}', 'white', '${pt}')" class="${pt === '不' ? 'bg-indigo-800 hover:bg-indigo-700 text-indigo-100' : pt === '？' ? 'bg-amber-800 hover:bg-amber-700 text-amber-200' : 'bg-slate-700 hover:bg-slate-600 text-slate-200'} text-xs px-1 py-0.5 rounded font-bold">
+                      ${pt}
+                    </button>
+                  `).join('')}
+                  <button onclick="addFoul('${m.id}', 'white')" class="bg-amber-700 hover:bg-amber-600 text-amber-100 text-xs px-1 py-0.5 rounded font-bold" title="反則">
+                    ▲
+                  </button>
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- ④ 白の獲得スコア（白選手名の真上） -->
+            <div class="my-1.5 bg-slate-950/60 rounded border border-slate-800 p-1.5 flex justify-center items-center gap-2">
+              ${[0, 1].map(i => {
+                const sc = whitePoints[i];
+                if (!sc) return `<div class="w-7 h-7 rounded-full border border-slate-800"></div>`;
+                return `
+                  <div onclick="editPoint('${m.id}', 'white',${i})" class="w-7 h-7 flex items-center justify-center font-bold text-slate-100 text-sm cursor-pointer hover:scale-110 transition-transform ${sc.isFirst ? 'first-point-circle text-amber-300 bg-slate-700' : 'bg-slate-800'}">
+                    ${sc.point}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+
+            <!-- ⑤ 白選手名（下部・縦書き中央揃え） & 反則表示 -->
+            <div class="bg-slate-800/50 border border-slate-700 rounded p-2 flex justify-between items-center min-h-[105px]">
+              <div class="flex flex-col items-center">
+                <span class="text-[10px] text-slate-400 font-bold mb-1">【白】</span>
+                <!-- 反則表示 -->
+                <span class="text-xs text-amber-400 font-bold tracking-tighter">
+                  ${'▲'.repeat(m.whiteFouls || 0)}
+                </span>
+              </div>
+              <!-- 選手名入力を中央寄せ -->
+              <div class="flex-1 flex justify-center items-center h-full">
+                <input type="text" value="${m.whitePlayer}" onchange="updatePlayerName('${m.id}', 'white', this.value)"
+                       class="vertical-text text-base font-bold text-slate-100 bg-transparent text-center focus:outline-none h-24 w-full border-b border-transparent focus:border-slate-400">
+              </div>
+            </div>
+
+            <!-- 下部コントロール -->
+            ${userRole === 'recorder' ? `
+              <div class="mt-2 pt-1.5 border-t border-slate-800 flex justify-between items-center text-xs">
+                <button onclick="undoScore('${m.id}')" class="text-slate-400 hover:text-slate-200">
+                  <i class="fa-solid fa-rotate-left"></i> 取消
+                </button>
+                <button onclick="toggleFinishMatch('${m.id}')" class="px-2 py-0.5 rounded ${m.isFinished ? 'bg-amber-600/30 text-amber-300 border border-amber-500' : 'bg-indigo-600 text-white font-bold'}">
+                  ${m.isFinished ? '解除' : '確定'}
+                </button>
+              </div>
+            ` : ''}
+
+          </div>
+        `;
+        container.insertAdjacentHTML('beforeend', cardHtml);
+      });
+    }
+
+    function addScore(matchId, color, point) {
+      const match = appData.matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      const currentTeamScores = match.scores.filter(s => s.color === color);
+      if (currentTeamScores.length >= 2) return;
+
+      const isFirst = match.scores.length === 0;
+      match.scores.push({ color, point, isFirst });
+
+      if (match.scores.filter(s => s.color === color).length === 2) {
+        match.isFinished = true;
+      }
+
+      updateData();
+    }
+
+    function addFoul(matchId, color) {
+      const match = appData.matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      if (color === 'red') {
+        match.redFouls = (match.redFouls || 0) + 1;
+        if (match.redFouls % 2 === 0) {
+          addScore(matchId, 'white', '反');
+        }
+      } else {
+        match.whiteFouls = (match.whiteFouls || 0) + 1;
+        if (match.whiteFouls % 2 === 0) {
+          addScore(matchId, 'red', '反');
+        }
+      }
+      updateData();
+    }
+
+    function editPoint(matchId, color, index) {
+      if (userRole !== 'recorder') return;
+      const match = appData.matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      const teamScores = match.scores.filter(s => s.color === color);
+      const targetScore = teamScores[index];
+      if (!targetScore) return;
+
+      const newPoint = prompt("変更後の技を入力または選択してください (メ / ド / コ / 反 / 不 / ？)", targetScore.point);
+      if (newPoint && ['メ','ド','コ','反','不','？'].includes(newPoint.trim())) {
+        targetScore.point = newPoint.trim();
+        updateData();
+      }
+    }
+
+    function undoScore(matchId) {
+      const match = appData.matches.find(m => m.id === matchId);
+      if (!match) return;
+
+      if (match.scores.length > 0) {
+        match.scores.pop();
+        match.isFinished = false;
+        match.scores.forEach((s, idx) => {
+          s.isFirst = (idx === 0);
+        });
+      } else if ((match.redFouls || 0) > 0 || (match.whiteFouls || 0) > 0) {
+        if (match.redFouls > 0) match.redFouls--;
+        else if (match.whiteFouls > 0) match.whiteFouls--;
+      }
+
+      updateData();
+    }
+
+    function updatePlayerName(matchId, color, val) {
+      const match = appData.matches.find(m => m.id === matchId);
+      if (!match) return;
+      if (color === 'red') match.redPlayer = val;
+      if (color === 'white') match.whitePlayer = val;
+      updateData(false);
+    }
+
+    function toggleFinishMatch(matchId) {
+      const match = appData.matches.find(m => m.id === matchId);
+      if (!match) return;
+      match.isFinished = !match.isFinished;
+      updateData();
+    }
+
+    function calculateTotals() {
+      let redWins = 0, whiteWins = 0;
+      let redPoints = 0, whitePoints = 0;
+
+      appData.matches.forEach(m => {
+        const rCount = m.scores.filter(s => s.color === 'red').length;
+        const wCount = m.scores.filter(s => s.color === 'white').length;
+        redPoints += rCount;
+        whitePoints += wCount;
+
+        if (m.isFinished) {
+          if (rCount > wCount) redWins++;
+          else if (wCount > rCount) whiteWins++;
+        }
+      });
+
+      document.getElementById('red-total-wins').innerText = redWins;
+      document.getElementById('red-total-points').innerText = redPoints;
+      document.getElementById('white-total-wins').innerText = whiteWins;
+      document.getElementById('white-total-points').innerText = whitePoints;
+
+      const statusEl = document.getElementById('overall-status');
+      if (redWins > whiteWins) {
+        statusEl.innerText = `${appData.redTeam} 優勢`;
+        statusEl.className = "text-[10px] md:text-xs font-bold text-red-400";
+      } else if (whiteWins > redWins) {
+        statusEl.innerText = `${appData.whiteTeam} 優勢`;
+        statusEl.className = "text-[10px] md:text-xs font-bold text-slate-200";
+      } else {
+        statusEl.innerText = "同点・進行中";
+        statusEl.className = "text-[10px] md:text-xs font-bold text-amber-300";
+      }
+    }
+
+    function updateData(shouldReRender = true) {
+      appData.redTeam = document.getElementById('red-team-name').value;
+      appData.whiteTeam = document.getElementById('white-team-name').value;
+
+      localStorage.setItem('kendo_board_v6_data', JSON.stringify(appData));
+      
+      if (shouldReRender) renderMatches();
+      calculateTotals();
+
+      if (roomRef && userRole === 'recorder') {
+        roomRef.set(appData).catch(err => console.error("Firestore Error:", err));
+      }
+    }
+
+    // 試合時間の変更（プリセット切替）
+    function changeTimerPreset(sec) {
+      selectedDuration = parseInt(sec, 10);
+      resetTimer();
+    }
+
+    function toggleTimer() {
+      const btn = document.getElementById('btn-timer-toggle');
+      if (isTimerRunning) {
+        clearInterval(timerInterval);
+        isTimerRunning = false;
+        btn.innerHTML = '<i class="fa-solid fa-play"></i>';
+      } else {
+        isTimerRunning = true;
+        btn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+        timerInterval = setInterval(() => {
+          if (timerSeconds > 0) {
+            timerSeconds--;
+            updateTimerDisplay();
+          } else {
+            clearInterval(timerInterval);
+            isTimerRunning = false;
+            btn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            alert("試合時間が終了しました");
+          }
+        }, 1000);
+      }
+    }
+
+    function resetTimer() {
+      clearInterval(timerInterval);
+      isTimerRunning = false;
+      timerSeconds = selectedDuration;
+      document.getElementById('btn-timer-toggle').innerHTML = '<i class="fa-solid fa-play"></i>';
+      updateTimerDisplay();
+    }
+
+    function updateTimerDisplay() {
+      const m = Math.floor(timerSeconds / 60).toString().padStart(2, '0');
+      const s = (timerSeconds % 60).toString().padStart(2, '0');
+      document.getElementById('timer-display').innerText = `${m}:${s}`;
+    }
+
+    function toggleModal(id) {
+      document.getElementById(id).classList.toggle('hidden');
+    }
+
+    function setRole(role) {
+      userRole = role;
+      document.getElementById('role-recorder').className = role === 'recorder' 
+        ? 'py-1.5 rounded border border-amber-500 bg-amber-500/20 text-amber-300 text-xs font-bold'
+        : 'py-1.5 rounded border border-slate-600 bg-slate-900 text-slate-400 text-xs font-bold';
+      
+      document.getElementById('role-viewer').className = role === 'viewer' 
+        ? 'py-1.5 rounded border border-indigo-500 bg-indigo-500/20 text-indigo-300 text-xs font-bold'
+        : 'py-1.5 rounded border border-slate-600 bg-slate-900 text-slate-400 text-xs font-bold';
+      renderMatches();
+    }
+
+    function generateRoomCode() {
+      const code = 'KENDO-' + Math.floor(1000 + Math.random() * 9000);
+      document.getElementById('room-code-input').value = code;
+    }
+
+    function connectRoom() {
+      const code = document.getElementById('room-code-input').value.trim().toUpperCase();
+      if (!code) {
+        alert("ルームコードを入力してください");
+        return;
+      }
+
+      if (!db) {
+        alert("オフラインモードです。クラウド同期は利用できません。");
+        toggleModal('sync-modal');
+        return;
+      }
+
+      roomRef = db.collection('kendo_rooms').doc(code);
+
+      roomRef.onSnapshot(doc => {
+        if (doc.exists && userRole === 'viewer') {
+          appData = doc.data();
+          document.getElementById('red-team-name').value = appData.redTeam;
+          document.getElementById('white-team-name').value = appData.whiteTeam;
+          renderMatches();
+          calculateTotals();
+        }
+      });
+
+      document.getElementById('sync-status').innerText = `接続中: ${code}`;
+      toggleModal('sync-modal');
+      renderMatches();
+    }
+
+    function exportCSV() {
+      let csv = "役割,赤選手,赤反則,赤本数,白本数,白反則,白選手,結果\n";
+      appData.matches.forEach(m => {
+        const rScores = m.scores.filter(s=>s.color==='red').map(s=>s.point).join('');
+        const wScores = m.scores.filter(s=>s.color==='white').map(s=>s.point).join('');
+        csv += `${m.roleName},${m.redPlayer},${m.redFouls||0},${rScores},${wScores},${m.whiteFouls||0},${m.whitePlayer},${m.isFinished ? '確定' : '未'}\n`;
+      });
+
+      const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `剣道試合結果_${new Date().toISOString().slice(0,10)}.csv`;
+      link.click();
+    }
+  </script>
+</body>
+</html>
