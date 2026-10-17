@@ -212,14 +212,15 @@
     let isTimerRunning = false;
 
     const firebaseConfig = {
-      apiKey: "AIzaSyDummyKeyForKendoScoreBoardApp12345",
-      authDomain: "kendo-board-app.firebaseapp.com",
-      projectId: "kendo-board-app",
-      storageBucket: "kendo-board-app.appspot.com",
-      messagingSenderId: "1234567890",
-      appId: "1:1234567890:web:abcdef123456"
+      apiKey: "AIzaSyCEOivYIIVRWUSbAh3fbMkR5yZNI31MNwE",
+      authDomain: "kendomaeda-d87af.firebaseapp.com",
+      databaseURL: "https://kendomaeda-d87af-default-rtdb.firebaseio.com",
+      projectId: "kendomaeda-d87af",
+      storageBucket: "kendomaeda-d87af.firebasestorage.app",
+      messagingSenderId: "294293026125",
+      appId: "1:294293026125:web:aff64346376e976e533304"
     };
-
+    
     try {
       if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
       db = firebase.firestore();
