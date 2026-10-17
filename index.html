@@ -58,13 +58,12 @@
         <h1 class="text-lg md:text-xl font-bold tracking-wider text-amber-100">剣道団体戦スコアボード</h1>
       </div>
 
-      <!-- タイマー & 共有コントロール -->
+      <!-- タイマー & コントロール群 -->
       <div class="flex items-center gap-2">
         <!-- 試合時間タイマー ＆ 時間切り替え -->
         <div class="bg-slate-800 border border-slate-600 rounded px-2.5 py-1 flex items-center gap-2">
           <i class="fa-solid fa-stopwatch text-amber-400"></i>
           
-          <!-- 時間選択セレクト -->
           <select id="timer-preset" onchange="changeTimerPreset(this.value)" class="bg-slate-900 border border-slate-700 text-amber-300 font-bold text-xs rounded px-1 py-0.5 focus:outline-none">
             <option value="120">2分</option>
             <option value="180">3分</option>
@@ -89,9 +88,14 @@
           <span id="sync-status" class="hidden sm:inline">リアルタイム共有</span>
         </button>
 
-        <!-- 保存 -->
+        <!-- CSV保存 -->
         <button onclick="exportCSV()" class="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded text-xs md:text-sm flex items-center gap-1">
           <i class="fa-solid fa-file-csv"></i> 保存
+        </button>
+
+        <!-- 全リセットボタン -->
+        <button onclick="resetAllData()" class="bg-rose-800 hover:bg-rose-700 text-white px-2.5 py-1.5 rounded text-xs md:text-sm flex items-center gap-1" title="全てのスコアと選手名を初期化">
+          <i class="fa-solid fa-trash-can"></i> リセット
         </button>
       </div>
     </div>
@@ -127,7 +131,7 @@
       </div>
     </div>
 
-    <!-- 縦レイアウト・横並び試合カード（左：先鋒 ➔ 右：大将・代表戦） -->
+    <!-- 縦レイアウト・横並び試合カード -->
     <div class="overflow-x-auto pb-4">
       <div id="matches-container" class="flex gap-3 min-w-max">
         <!-- JSで動的生成 -->
@@ -188,7 +192,7 @@
       { id: 'daihyo', name: '代表戦' }
     ];
 
-    let appData = {
+    const defaultAppData = {
       redTeam: '赤チーム',
       whiteTeam: '白チーム',
       matches: MATCH_ROLES.map(r => ({
@@ -196,12 +200,14 @@
         roleName: r.name,
         redPlayer: '赤選手',
         whitePlayer: '白選手',
-        redFouls: 0,   // 赤の反則回数 (▲)
-        whiteFouls: 0, // 白の反則回数 (▲)
-        scores: [],    // { color: 'red'|'white', point: 'メ', isFirst: boolean }
+        redFouls: 0,
+        whiteFouls: 0,
+        scores: [],
         isFinished: false
       }))
     };
+
+    let appData = JSON.parse(JSON.stringify(defaultAppData));
 
     let userRole = 'recorder';
     let db = null;
@@ -211,16 +217,17 @@
     let selectedDuration = 240;
     let isTimerRunning = false;
 
-    const firebaseConfig = {
-      apiKey: "AIzaSyCEOivYIIVRWUSbAh3fbMkR5yZNI31MNwE",
-      authDomain: "kendomaeda-d87af.firebaseapp.com",
-      databaseURL: "https://kendomaeda-d87af-default-rtdb.firebaseio.com",
-      projectId: "kendomaeda-d87af",
-      storageBucket: "kendomaeda-d87af.firebasestorage.app",
-      messagingSenderId: "294293026125",
-      appId: "1:294293026125:web:aff64346376e976e533304"
-    };
-    
+    // ※ ここにご自身のFirebase設定を入力してください
+const firebaseConfig = {
+  apiKey: "AIzaSyCEOivYIIVRWUSbAh3fbMkR5yZNI31MNwE",
+  authDomain: "kendomaeda-d87af.firebaseapp.com",
+  databaseURL: "https://kendomaeda-d87af-default-rtdb.firebaseio.com",
+  projectId: "kendomaeda-d87af",
+  storageBucket: "kendomaeda-d87af.firebasestorage.app",
+  messagingSenderId: "294293026125",
+  appId: "1:294293026125:web:aff64346376e976e533304"
+};
+
     try {
       if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
       db = firebase.firestore();
@@ -235,7 +242,7 @@
     };
 
     function loadLocalStorage() {
-      const local = localStorage.getItem('kendo_board_v6_data');
+      const local = localStorage.getItem('kendo_board_v7_data');
       if (local) {
         try {
           appData = JSON.parse(local);
@@ -273,7 +280,6 @@
                   ${'▲'.repeat(m.redFouls || 0)}
                 </span>
               </div>
-              <!-- 選手名入力を中央寄せ -->
               <div class="flex-1 flex justify-center items-center h-full">
                 <input type="text" value="${m.redPlayer}" onchange="updatePlayerName('${m.id}', 'red', this.value)"
                        class="vertical-text text-base font-bold text-red-100 bg-transparent text-center focus:outline-none h-24 w-full border-b border-transparent focus:border-red-500">
@@ -345,7 +351,6 @@
                   ${'▲'.repeat(m.whiteFouls || 0)}
                 </span>
               </div>
-              <!-- 選手名入力を中央寄せ -->
               <div class="flex-1 flex justify-center items-center h-full">
                 <input type="text" value="${m.whitePlayer}" onchange="updatePlayerName('${m.id}', 'white', this.value)"
                        class="vertical-text text-base font-bold text-slate-100 bg-transparent text-center focus:outline-none h-24 w-full border-b border-transparent focus:border-slate-400">
@@ -368,6 +373,18 @@
         `;
         container.insertAdjacentHTML('beforeend', cardHtml);
       });
+    }
+
+    // 全リセット実行関数
+    function resetAllData() {
+      if (!confirm("すべてのスコアや選手名が初期化されます。本当にリセットしますか？")) return;
+
+      appData = JSON.parse(JSON.stringify(defaultAppData));
+      document.getElementById('red-team-name').value = appData.redTeam;
+      document.getElementById('white-team-name').value = appData.whiteTeam;
+
+      resetTimer();
+      updateData();
     }
 
     function addScore(matchId, color, point) {
@@ -492,7 +509,7 @@
       appData.redTeam = document.getElementById('red-team-name').value;
       appData.whiteTeam = document.getElementById('white-team-name').value;
 
-      localStorage.setItem('kendo_board_v6_data', JSON.stringify(appData));
+      localStorage.setItem('kendo_board_v7_data', JSON.stringify(appData));
       
       if (shouldReRender) renderMatches();
       calculateTotals();
@@ -502,7 +519,6 @@
       }
     }
 
-    // 試合時間の変更（プリセット切替）
     function changeTimerPreset(sec) {
       selectedDuration = parseInt(sec, 10);
       resetTimer();
