@@ -156,7 +156,7 @@
         <div>
           <label class="block text-xs font-bold text-slate-400 mb-1">ルームコード</label>
           <div class="flex gap-2">
-            <input type="text" id="room-code-input" placeholder="例: KENDO123" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-amber-300 font-mono font-bold focus:outline-none uppercase text-sm">
+            <input type="text" id="room-code-input" placeholder="例: COURT-A" class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-amber-300 font-mono font-bold focus:outline-none uppercase text-sm">
             <button onclick="generateRoomCode()" class="bg-slate-700 hover:bg-slate-600 text-xs px-3 py-1.5 rounded">自動生成</button>
           </div>
         </div>
@@ -176,7 +176,7 @@
 
       <div class="pt-2">
         <button onclick="connectRoom()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded text-sm">
-          接続・同期開始
+          接続・切替開始
         </button>
       </div>
     </div>
@@ -212,13 +212,14 @@
     let userRole = 'recorder';
     let db = null;
     let roomRef = null;
+    let unsubscribeRoom = null; // リスナー解除用
     let timerInterval = null;
     let timerSeconds = 240;
     let selectedDuration = 240;
     let isTimerRunning = false;
 
-    // ※ ここにご自身のFirebase設定を入力してください
-const firebaseConfig = {
+    // ※ Firebase設定（ご自身のキーを入力）
+    const firebaseConfig = {
   apiKey: "AIzaSyCEOivYIIVRWUSbAh3fbMkR5yZNI31MNwE",
   authDomain: "kendomaeda-d87af.firebaseapp.com",
   databaseURL: "https://kendomaeda-d87af-default-rtdb.firebaseio.com",
@@ -227,6 +228,7 @@ const firebaseConfig = {
   messagingSenderId: "294293026125",
   appId: "1:294293026125:web:aff64346376e976e533304"
 };
+
 
     try {
       if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
@@ -242,7 +244,7 @@ const firebaseConfig = {
     };
 
     function loadLocalStorage() {
-      const local = localStorage.getItem('kendo_board_v7_data');
+      const local = localStorage.getItem('kendo_board_v8_data');
       if (local) {
         try {
           appData = JSON.parse(local);
@@ -375,7 +377,6 @@ const firebaseConfig = {
       });
     }
 
-    // 全リセット実行関数
     function resetAllData() {
       if (!confirm("すべてのスコアや選手名が初期化されます。本当にリセットしますか？")) return;
 
@@ -509,7 +510,7 @@ const firebaseConfig = {
       appData.redTeam = document.getElementById('red-team-name').value;
       appData.whiteTeam = document.getElementById('white-team-name').value;
 
-      localStorage.setItem('kendo_board_v7_data', JSON.stringify(appData));
+      localStorage.setItem('kendo_board_v8_data', JSON.stringify(appData));
       
       if (shouldReRender) renderMatches();
       calculateTotals();
@@ -578,10 +579,11 @@ const firebaseConfig = {
     }
 
     function generateRoomCode() {
-      const code = 'KENDO-' + Math.floor(1000 + Math.random() * 9000);
+      const code = 'COURT-' + Math.floor(1000 + Math.random() * 9000);
       document.getElementById('room-code-input').value = code;
     }
 
+    // ★ ルーム切り替え・接続処理の修正
     function connectRoom() {
       const code = document.getElementById('room-code-input').value.trim().toUpperCase();
       if (!code) {
@@ -590,15 +592,38 @@ const firebaseConfig = {
       }
 
       if (!db) {
-        alert("オフラインモードです。クラウド同期は利用できません。");
+        alert("オフラインモードです。Firebaseの設定（APIキー等）を確認してください。");
         toggleModal('sync-modal');
         return;
       }
 
+      // 既存のリスナーがあれば解除
+      if (unsubscribeRoom) {
+        unsubscribeRoom();
+      }
+
       roomRef = db.collection('kendo_rooms').doc(code);
 
-      roomRef.onSnapshot(doc => {
-        if (doc.exists && userRole === 'viewer') {
+      // まず現在の部屋の最新データを取得して画面に反映
+      roomRef.get().then(doc => {
+        if (doc.exists) {
+          appData = doc.data();
+        } else {
+          // まだ存在しない新部屋の場合は初期状態で作成
+          appData = JSON.parse(JSON.stringify(defaultAppData));
+          if (userRole === 'recorder') {
+            roomRef.set(appData);
+          }
+        }
+        document.getElementById('red-team-name').value = appData.redTeam;
+        document.getElementById('white-team-name').value = appData.whiteTeam;
+        renderMatches();
+        calculateTotals();
+      });
+
+      // リアルタイム変更を監視
+      unsubscribeRoom = roomRef.onSnapshot(doc => {
+        if (doc.exists && (userRole === 'viewer' || doc.metadata.hasPendingWrites === false)) {
           appData = doc.data();
           document.getElementById('red-team-name').value = appData.redTeam;
           document.getElementById('white-team-name').value = appData.whiteTeam;
@@ -609,7 +634,6 @@ const firebaseConfig = {
 
       document.getElementById('sync-status').innerText = `接続中: ${code}`;
       toggleModal('sync-modal');
-      renderMatches();
     }
 
     function exportCSV() {
